@@ -1,11 +1,11 @@
 ﻿using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Diagnostics;
 using Shouldly;
+using System.Threading;
 
 namespace EnumSearchOnClassUnitTests
 {
@@ -34,6 +34,7 @@ namespace EnumSearchOnClassUnitTests
             dataClass.ClassTwoProp.Enum2Prop = (Enum2)100;
 
             var result = GetEnumProperties(dataClass)
+                            .AsParallel()
                             .SelectMany(e => ValidateEnum(e))
                             .ToList()
                             ;
@@ -43,16 +44,48 @@ namespace EnumSearchOnClassUnitTests
             result.ElementAt(1).ShouldContain(typeof(Enum2).Name);
         }
 
+
+        [TestMethod]
+        public void Validate_derived_classes_with_invlaid_enum_values()
+        {
+            var dataClass = new ClassThree() { Enum2Prop = (Enum2)99 };
+
+            var result = GetEnumProperties(dataClass)
+                            .AsParallel()
+                            .SelectMany(e => ValidateEnum(e))
+                            .ToList()
+                            ;
+
+            result.Count.ShouldBe(1);
+        }
+
+        [TestMethod]
+        public void Validate_derived_classes_with_no_vlaid_enum_values()
+        {
+            var dataClass = new ClassThree();
+
+            var result = GetEnumProperties(dataClass)
+                            .AsParallel()
+                            .SelectMany(e => ValidateEnum(e))
+                            .ToList()
+                            ;
+
+            result.Count.ShouldBe(0);
+        }
+
         private IEnumerable<EnumData> GetEnumProperties(object classObj)
         {
             var filterOnClassesAndEnumProperties = classObj
                                                     .GetType()
                                                     .GetProperties()
+                                                    .AsParallel()
                                                     .Where(p => (p.PropertyType.Name != "String" &&  //exclude string because it is reference type
-                                                                 p.PropertyType.IsClass) || p.PropertyType.IsEnum);
+                                                                 p.PropertyType.IsClass) || p.PropertyType.IsEnum)
+                                                    ;
+
             foreach (var p in filterOnClassesAndEnumProperties)
             {
-                //Debug.WriteLine(p.Name + " " + p.PropertyType.Name);
+                Debug.WriteLine(string.Format("{0} {1} {2}", Thread.CurrentThread.ManagedThreadId, p.Name, p.PropertyType.Name));
                 if (p.PropertyType.IsClass)
                 {
                     foreach (var enumData in GetEnumProperties(p.GetValue(classObj)))
@@ -98,6 +131,14 @@ namespace EnumSearchOnClassUnitTests
         public int MyPropertyInt { get; set; }
         public Enum2 Enum2Prop { get; set; }
         public string MyPropertyString { get; set; }
+    }
+
+    public class ClassThree : ClassTwo
+    {
+        public ClassThree()
+        {
+            Enum2Prop = Enum2.Four;
+        }
     }
 
     public enum Enum1
